@@ -1,0 +1,100 @@
+name: Fetch from upstreams
+
+on:
+  schedule:
+    - cron: "0 */4 * * *"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - run: |
+        curl -m 45 -LJO https://github.com/nftkitten/nftkitten-cli/raw/main/main && chmod +x ./main
+    - run: |
+        echo '{{if or (noCounter "offset") (gt (len .lastRecord) 500) (eq (len .lastRecord) 500)}}https://api-mainnet.magiceden.dev/v2/launchpad/collections?limit=500&offset={{counter "offset" 500 0}}{{end}}' | OUT='.out.json' ./main magiceden
+        [ $? -eq 0 ] && [ -s .out.json ] && mv .out.json launchpad.json  || rm .out.json
+        git pull --no-commit origin
+    - uses: stefanzweifel/git-auto-commit-action@v4
+    - run: |
+        echo 'https://api-mainnet.magiceden.dev/all_collections_with_escrow_data?edge_cache=true' | OUT='.out.json' ./main magiceden
+        [ $? -eq 0 ] && [ -s .out.json ] && mv .out.json collections.json  || rm .out.json
+        git pull --no-commit origin
+    - uses: stefanzweifel/git-auto-commit-action@v4
+    - run: |
+        echo 'https://api-mainnet.magiceden.dev/drops?edge_cache=true' | OUT='.out.json' ./main magiceden
+        [ $? -eq 0 ] && [ -s .out.json ] && mv .out.json drops.json  || rm .out.json
+        git pull --no-commit origin
+    - uses: stefanzweifel/git-auto-commit-action@v4
+    - run: |
+        echo 'https://api-mainnet.magiceden.dev/rpc/getAggregatedCollectionMetrics?timeframe=1d&edge_cache=true' | OUT='.out.json' ./main magiceden
+        [ $? -eq 0 ] && [ -s .out.json ] && mv .out.json collectionMetrics1d.json  || rm .out.json
+        git pull --no-commit origin
+    - uses: stefanzweifel/git-auto-commit-action@v4
+    - run: |
+        echo 'https://api-mainnet.magiceden.dev/rpc/getAggregatedCollectionMetrics?timeframe=7d&edge_cache=true' | OUT='.out.json' ./main magiceden
+        [ $? -eq 0 ] && [ -s .out.json ] && mv .out.json collectionMetrics7d.json  || rm .out.json
+        git pull --no-commit origin
+    - uses: stefanzweifel/git-auto-commit-action@v4
+    - run: |
+        echo 'https://api-mainnet.magiceden.dev/rpc/getAggregatedCollectionMetrics?timeframe=30d&edge_cache=true' | OUT='.out.json' ./main magiceden
+        [ $? -eq 0 ] && [ -s .out.json ] && mv .out.json collectionMetrics30d.json  || rm .out.json
+        git pull --no-commit origin
+    - uses: stefanzweifel/git-auto-commit-action@v4
+    - run: |
+        find c -name '.out.json' -exec rm -rf {} \;
+        cat collections.json | jq -cr '.collections[] | .symbol + "/_" + .updatedAt' | \
+        while read -r l; do
+          if [ "_$(cat 'c/'$(dirname $l)'/_' 2>/dev/null)" != "$(basename $l)" ]; then
+            echo 'https://api-mainnet.magiceden.dev/rpc/getCollectionEscrowStats/'$(dirname $l)'?edge_cache=true';
+          fi
+        done | \
+        OUT='{{if .lastRecord}}c/{{.lastRecord.symbol}}/.out.json{{end}}' JSONPATH='$.results' ./main magiceden
+        if [ $? -eq 0 ]; then
+          find c -name '.out.json' \
+            -execdir bash -c 'cat ../../collections.json | jq -cr '"'"'.collections[] | select(.symbol == "'"'"'$(basename "$PWD")'"'"'") | .updatedAt'"'"' > _' \; \
+            -execdir mv {} _.json \;
+        else
+          find c -name '.out.json' -exec rm -rf {} \;
+        fi
+        git pull --no-commit origin
+    - uses: stefanzweifel/git-auto-commit-action@v4
+    - run: |
+        find s -name '.out.json' -exec rm -rf {} \;
+        cat collections.json | jq -cr '.collections[] | .symbol + "/_" + .updatedAt' | \
+        while read -r l; do
+          if [ "_$(cat 's/'$(dirname $l)'/_' 2>/dev/null)" != "$(basename $l)" ]; then
+            echo 'https://api-mainnet.magiceden.dev/v2/collections/'$(dirname $l)'/stats/';
+          fi
+        done | \
+        OUT='{{if .lastRecord}}s/{{.lastRecord.symbol}}/.out.json{{end}}' ./main magiceden
+        if [ $? -eq 0 ]; then
+          find s -name '.out.json' \
+            -execdir bash -c 'cat ../../collections.json | jq -cr '"'"'.collections[] | select(.symbol == "'"'"'$(basename "$PWD")'"'"'") | .updatedAt'"'"' > _' \; \
+            -execdir mv {} _.json \;
+        else
+          find s -name '.out.json' -exec rm -rf {} \;
+        fi
+        git pull --no-commit origin
+    - uses: stefanzweifel/git-auto-commit-action@v4
+    - run: |
+        find l -name '.out.json' -exec rm -rf {} \;
+        cat collections.json | jq -cr '.collections[] | .symbol' | \
+        while read -r l; do
+          ACTUAL="$(cat 'l/'$l'/_.json' 2>/dev/null | jq 'length' 2>/dev/null)"
+          [ -z $ACTUAL ] && ACTUAL=0
+          EXPECT="$(cat 's/'$l'/_.json' 2>/dev/null | jq '.listedCount' 2>/dev/null)"
+          [ -z $EXPECT ] && EXPECT=0
+          if [ "$ACTUAL" != "$EXPECT" ]; then
+            echo '{{if or (noCounter "skip") (gt (len .lastRecord.results) 20) (eq (len .lastRecord.results) 20)}}https://api-mainnet.magiceden.dev/rpc/getListedNFTsByQuery?q=%7B%22%24match%22%3A%7B%22collectionSymbol%22%3A%22'$l'%22%7D%2C%22%24sort%22%3A%7B%22createdAt%22%3A1%7D%2C%22%24skip%22%3A{{counter "skip" 20 0}}%2C%22%24limit%22%3A20%7D{{end}}';
+          fi
+        done | \
+        OUT='{{if .lastRecord}}l/{{.lastRecord.collectionName}}/.out.json{{end}}' JSONPATH='$.results' START='[' SPLIT=',' END=']' ./main magiceden
+        if [ $? -eq 0 ]; then
+          find l -name '.outall.json' -execdir mv {} _.json \;
+        else
+          find l -name '.out.json' -exec rm -rf {} \;
+        fi
+        git pull --no-commit origin
+    - uses: stefanzweifel/git-auto-commit-action@v4
