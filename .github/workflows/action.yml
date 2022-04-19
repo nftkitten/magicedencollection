@@ -2,7 +2,7 @@ name: Fetch from upstreams
 
 on:
   schedule:
-    - cron: "0 1 * * *"
+    - cron: "0 * * * *"
   workflow_dispatch:
 
 jobs:
@@ -78,23 +78,23 @@ jobs:
         fi
         git pull --no-commit origin
     - uses: stefanzweifel/git-auto-commit-action@v4
-    - run: |
-        find l -name '.out.json' -exec rm -rf {} \;
-        cat collections.json | jq -cr '.collections[] | .symbol' | \
-        while read -r l; do
-          ACTUAL="$(cat 'l/'$l'/_.json' 2>/dev/null | jq 'length' 2>/dev/null)"
-          [ -z $ACTUAL ] && ACTUAL=0
-          EXPECT="$(cat 's/'$l'/_.json' 2>/dev/null | jq '.listedCount' 2>/dev/null)"
-          [ -z $EXPECT ] && EXPECT=0
-          if [ "$ACTUAL" != "$EXPECT" ]; then
-            echo '{{if or (noCounter "skip") (ge (len .lastRecord.results) 20)}}https://api-mainnet.magiceden.dev/rpc/getListedNFTsByQuery?q=%7B%22%24match%22%3A%7B%22collectionSymbol%22%3A%22'$l'%22%7D%2C%22%24sort%22%3A%7B%22createdAt%22%3A1%7D%2C%22%24skip%22%3A{{counter "skip" 20 0}}%2C%22%24limit%22%3A20%7D{{end}}';
-          fi
-        done | \
-        OUT='{{if .lastRecord}}l/{{.lastRecord.collectionName}}/.out.json{{end}}' JSONPATH='$.results' START='[' SPLIT=',' END=']' ./main magiceden
-        if [ $? -eq 0 ]; then
-          find l -name '.outall.json' -execdir mv {} _.json \;
-        else
-          find l -name '.out.json' -exec rm -rf {} \;
-        fi
-        git pull --no-commit origin
-    - uses: stefanzweifel/git-auto-commit-action@v4
+    # - run: |
+    #     find l -name '.out.json' -exec rm -rf {} \;
+    #     cat collections.json | jq -cr '.collections[] | .symbol' | \
+    #     while read -r l; do
+    #       ACTUAL="$(cat 'l/'$l'/_.json' 2>/dev/null | jq 'length' 2>/dev/null)"
+    #       [ -z $ACTUAL ] && ACTUAL=0
+    #       EXPECT="$(cat 's/'$l'/_.json' 2>/dev/null | jq '.listedCount' 2>/dev/null)"
+    #       [ -z $EXPECT ] && EXPECT=0
+    #       if [ "$ACTUAL" != "$EXPECT" ]; then
+    #         echo '{{if or (noCounter "skip") (ge (len .lastRecord.results) 20)}}https://api-mainnet.magiceden.dev/rpc/getListedNFTsByQuery?q=%7B%22%24match%22%3A%7B%22collectionSymbol%22%3A%22'$l'%22%7D%2C%22%24sort%22%3A%7B%22createdAt%22%3A1%7D%2C%22%24skip%22%3A{{counter "skip" 20 0}}%2C%22%24limit%22%3A20%7D{{end}}';
+    #       fi
+    #     done | \
+    #     OUT='{{if .lastRecord}}l/{{.lastRecord.collectionName}}/.out.json{{end}}' JSONPATH='$.results' START='[' SPLIT=',' END=']' ./main magiceden
+    #     if [ $? -eq 0 ]; then
+    #       find l -name '.outall.json' -execdir mv {} _.json \;
+    #     else
+    #       find l -name '.out.json' -exec rm -rf {} \;
+    #     fi
+    #     git pull --no-commit origin
+    # - uses: stefanzweifel/git-auto-commit-action@v4
